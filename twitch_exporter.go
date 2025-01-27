@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"net/http"
 	"os"
+	"time"
 
 	kingpin "github.com/alecthomas/kingpin/v2"
 	"github.com/go-kit/log"
@@ -32,11 +33,71 @@ var (
 		"Name of a Twitch Channel to request metrics."))
 	twitchAccessToken = kingpin.Flag("twitch.access-token",
 		"Access Token for the Twitch Helix API.").Required().String()
+
+	// remember game IDs we have encountered before and store their name
+	gameIdCache = GameIdCache{}
 )
 
 const (
 	namespace = "twitch"
+
+	TopGamesLimit        = 100
+	TopGamesStreamsLimit = 100
 )
+
+type GameIdCacheItem struct {
+	Stored time.Time
+
+	ID   string
+	Name string
+}
+
+// store a map of game ids to the name
+type GameIdCache map[string]GameIdCacheItem
+
+func (g GameIdCache) Add(id string, name string) {
+	// already have the item so we do not need to store it again
+	if g.Has(id) {
+		return
+	}
+
+	g[id] = GameIdCacheItem{
+		Stored: time.Now(),
+
+		ID:   id,
+		Name: name,
+	}
+
+	// make sure we don't store too many games
+	g.prune()
+}
+
+// is the game id already present in the cache?
+func (g GameIdCache) Has(id string) bool {
+	_, ok := g[id]
+
+	return ok
+}
+
+// get the name of a game, based on id, if not found then nil is returned
+func (g GameIdCache) GetName(id string) *string {
+	if !g.Has(id) {
+		return nil
+	}
+
+	gameName := g[id].Name
+	return &gameName
+}
+
+// trim off any game cache items that has been in the cache for more than 5 mins
+func (g GameIdCache) prune() {
+	for k, v := range g {
+		// if the item is older than 5 minutes then pop it off
+		if time.Since(v.Stored).Minutes() >= float64(5) {
+			delete(g, k)
+		}
+	}
+}
 
 // ChannelNames represents a list of twitch channels.
 type ChannelNames []string
@@ -146,22 +207,34 @@ func (e *Exporter) Collect(ch chan<- prometheus.Metric) {
 		return
 	}
 
-	if streamsResp.StatusCode != 200 { 
+	if streamsResp.StatusCode != 200 {
 		level.Error(e.logger).Log("msg", "Failed to collect stats from Twitch helix API", "err", streamsResp.ErrorMessage)
 		return
 	}
 
 	for _, stream := range streamsResp.Data.Streams {
-		gamesResp, err := e.client.GetGames(&helix.GamesParams{
-			IDs: []string{stream.GameID},
-		})
-		var gameName string
-		if err != nil {
-			level.Error(e.logger).Log("msg", "Failed to get Game name", "err", err)
-			gameName = ""
-		} else {
-			gameName = gamesResp.Data.Games[0].Name
+		var gameName string = ""
+
+		if gameIdCache.Has(stream.GameID) {
+			cachedName := gameIdCache.GetName(stream.GameID)
+			if cachedName != nil {
+				gameName = *cachedName
+			}
 		}
+
+		if gameName == "" {
+			gamesResp, err := e.client.GetGames(&helix.GamesParams{
+				IDs: []string{stream.GameID},
+			})
+
+			if err != nil {
+				level.Error(e.logger).Log("msg", "Failed to get Game name", "err", err)
+			} else {
+				gameName = gamesResp.Data.Games[0].Name
+				gameIdCache.Add(stream.GameID, gameName)
+			}
+		}
+
 		channelsLive[stream.UserName] = true
 		ch <- prometheus.MustNewConstMetric(
 			channelUp, prometheus.GaugeValue, 1,
@@ -181,8 +254,8 @@ func (e *Exporter) Collect(ch chan<- prometheus.Metric) {
 		return
 	}
 
-	if usersResp.StatusCode != 200 { 
-			level.Warn(e.logger).Log("msg", "Failed to collect users stats from Twitch helix API", "err", usersResp.ErrorMessage)
+	if usersResp.StatusCode != 200 {
+		level.Warn(e.logger).Log("msg", "Failed to collect users stats from Twitch helix API", "err", usersResp.ErrorMessage)
 	}
 
 	for _, user := range usersResp.Data.Users {
@@ -194,7 +267,7 @@ func (e *Exporter) Collect(ch chan<- prometheus.Metric) {
 			return
 		}
 
-		if usersFollowsResp.StatusCode != 200 { 
+		if usersFollowsResp.StatusCode != 200 {
 			level.Warn(e.logger).Log("msg", "Failed to collect follower stats from Twitch helix API", "err", usersFollowsResp.ErrorMessage)
 		}
 
@@ -220,7 +293,7 @@ func (e *Exporter) Collect(ch chan<- prometheus.Metric) {
 			return
 		}
 
-		if subscribtionsResp.StatusCode != 200 { 
+		if subscribtionsResp.StatusCode != 200 {
 			level.Warn(e.logger).Log("msg", "Failed to collect subscirbers stats from Twitch helix API", "err", subscribtionsResp.ErrorMessage)
 		}
 
