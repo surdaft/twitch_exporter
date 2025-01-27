@@ -151,6 +151,11 @@ var (
 		"The number of subscriber of a channel.",
 		[]string{"username", "tier", "gifted"}, nil,
 	)
+	topGames = prometheus.NewDesc(
+		prometheus.BuildFQName(namespace, "", "top_games_viewers_total"),
+		"The number of live viewers for streamers of top x games",
+		[]string{"username", "game"}, nil,
+	)
 )
 
 type promHTTPLogger struct {
@@ -323,6 +328,55 @@ func (e *Exporter) Collect(ch chan<- prometheus.Metric) {
 				channelSubscribers, prometheus.GaugeValue,
 				float64(counter), user.DisplayName, tier, "false",
 			)
+		}
+	}
+
+	topGamesResp, err := e.client.GetTopGames(&helix.TopGamesParams{
+		First: TopGamesLimit,
+	})
+
+	if err != nil {
+		level.Error(e.logger).Log("msg", "Failed to get top games from Twitch helix API", "err", err)
+		return
+	}
+
+	// get the top 5 streams of each of the top games
+	for _, g := range topGamesResp.Data.Games {
+		// since we have the info, lets store it for a bit
+		gameIdCache.Add(g.ID, g.Name)
+
+		streams, err := e.client.GetStreams(&helix.StreamsParams{
+			GameIDs: []string{g.ID},
+			First:   TopGamesStreamsLimit,
+			Type:    "live", // twitch' default is all
+		})
+
+		if err != nil {
+			level.Error(e.logger).Log("msg", "Failed to get top game stream stats from Twitch helix API", "err", err)
+			return
+		}
+
+		for _, s := range streams.Data.Streams {
+			ch <- prometheus.MustNewConstMetric(
+				topGames, prometheus.GaugeValue,
+				float64(s.ViewerCount), s.UserName, s.GameName,
+			)
+		}
+
+		// we are getting pretty close to the rate limit, lets back off a min
+		if streams.GetRateLimitRemaining() <= 3 {
+			level.Warn(e.logger).Log(
+				"msg", "we are close to the rate limit, so just waiting a moment before continuing",
+				"limit", streams.GetRateLimit(),
+				"remaining", streams.GetRateLimitRemaining(),
+				"reset", streams.GetRateLimitReset(),
+			)
+
+			// rate-limit-reset is the unix timestamps which our bucket is refilled
+			// and we can comfortably just go ham again. calculate how many seconds
+			// until that happens
+			secsToWait := int64(streams.GetRateLimitReset()) - time.Now().Unix()
+			time.Sleep(time.Duration(secsToWait) * time.Second)
 		}
 	}
 }
