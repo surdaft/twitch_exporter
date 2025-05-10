@@ -27,16 +27,25 @@ var (
 	metricsPath = kingpin.Flag("web.telemetry-path",
 		"Path under which to expose metrics.").
 		Default("/metrics").String()
+
+	// twitch app access token config
 	twitchClientID = kingpin.Flag("twitch.client-id",
 		"Client ID for the Twitch Helix API.").Required().String()
 	twitchClientSecret = kingpin.Flag("twitch.client-secret",
 		"Client Secret for the Twitch Helix API.").String()
-	twitchChannel = Channels(kingpin.Flag("twitch.channel",
-		"Name of a Twitch Channel to request metrics."))
+
+	// twitch client access token config
 	twitchAccessToken = kingpin.Flag("twitch.access-token",
 		"Access Token for the Twitch Helix API.").String()
 	twitchRefreshToken = kingpin.Flag("twitch.refresh-token",
 		"Refresh Token for the Twitch Helix API.").String()
+
+	// collector configs
+	// the twitch channel is a global config for all collectors, and is
+	// defined at the root level. Individual collectors may have their own
+	// configurations, which are defined within the collector itself.
+	twitchChannel = Channels(kingpin.Flag("twitch.channel",
+		"Name of a Twitch Channel to request metrics."))
 )
 
 type promHTTPLogger struct {

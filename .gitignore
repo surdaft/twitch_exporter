@@ -21,3 +21,6 @@ helmfile.yaml
 
 # Output of the go coverage tool, specifically when used with LiteIDE
 *.out
+
+# ignore macos metadata
+.DS_Store
