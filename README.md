@@ -38,10 +38,24 @@ make
 * __`version`:__ Show application version.
 * __`web.listen-address`:__ Address to listen on for web interface and telemetry.
 * __`web.telemetry-path`:__ Path under which to expose metrics.
+* __`eventsub.enabled`:__ Enable eventsub endpoint (default: false).
+* __`eventsub.webhook-url`:__ The url your collector will be expected to be hosted at, eg: http://example.svc/eventsub (Must end with `/eventsub`).
+* __`eventsub.secret`:__ Secure 1-100 character secret for your eventsub validation
 * __`--[no-]collector.channel_followers_total`:__ Enable the channel_followers_total collector (default: enabled).
-* __`--[no-]collector.channel_subscribers_total`:__ Enable the channel_subscribers_total collector (default: disabled).
+* __`--[no-]collector.channel_subscribers_total`:__ Enable the channel_subscribers_total collector (default: disabled*).
 * __`--[no-]collector.channel_up`:__ Enable the channel_up collector (default: enabled).
 * __`--[no-]collector.channel_viewers_total`:__ Enable the channel_viewers_total collector (default: enabled).
+* __`--[no-]collector.channel_chat_messages_total`:__ Enable the channel_chat_messages_total (default: disabled**).
+
+```
+* Disabled due to the requirement of a user access token, which must be acquired outside of the collector
+** Disabled due to event-sub being disabled by default
+```
+
+## Event-sub
+
+Event-sub metrics are disabled by default due to requiring a public endpoint to be exposed, which Twitch is then able to send
+a webhook to. Due to the likeliness that you do not want to expose the service publicly, it is disabled.
 
 ## Useful Queries
 

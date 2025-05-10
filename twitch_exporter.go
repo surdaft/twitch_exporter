@@ -12,6 +12,7 @@ import (
 
 	kingpin "github.com/alecthomas/kingpin/v2"
 	"github.com/damoun/twitch_exporter/collector"
+	"github.com/damoun/twitch_exporter/internal/eventsub"
 	"github.com/nicklaw5/helix/v2"
 	"github.com/prometheus/client_golang/prometheus"
 	versioncollector "github.com/prometheus/client_golang/prometheus/collectors/version"
@@ -37,6 +38,12 @@ var (
 		"Access Token for the Twitch Helix API.").String()
 	twitchRefreshToken = kingpin.Flag("twitch.refresh-token",
 		"Refresh Token for the Twitch Helix API.").String()
+	eventSubEnabled = kingpin.Flag("eventsub.enabled",
+		"Enable the Twitch Eventsub API.").Default("false").Bool()
+	eventSubWebhookURL = kingpin.Flag("eventsub.webhook-url",
+		"Webhook URL for the Twitch Eventsub API.").Default("").String()
+	eventSubWebhookSecret = kingpin.Flag("eventsub.webhook-secret",
+		"Webhook Secret for the Twitch Eventsub API.").Default("").String()
 )
 
 type promHTTPLogger struct {
@@ -62,7 +69,7 @@ func main() {
 	promslogConfig := &promslog.Config{}
 	flag.AddFlags(kingpin.CommandLine, promslogConfig)
 
-	var webConfig = webflag.AddFlags(kingpin.CommandLine, ":9184")
+	var webConfig = webflag.AddFlags(kingpin.CommandLine, "0.0.0.0:9184")
 	kingpin.Version(version.Print("twitch_exporter"))
 	kingpin.HelpFlag.Short('h')
 	kingpin.Parse()
@@ -89,6 +96,27 @@ func main() {
 	} else {
 		logger.Error("Error creating the client", "err", "no client secret or access token provided")
 		os.Exit(1)
+	}
+
+	if *eventSubEnabled {
+		if *twitchClientSecret == "" {
+			logger.Error("Error creating the eventsub client", "err", "client secret is required, app access tokens are generated for eventsub")
+			os.Exit(1)
+		}
+
+		if *eventSubWebhookURL == "" || *eventSubWebhookSecret == "" {
+			logger.Error("Error creating the eventsub client", "err", "webhook URL and secret are required")
+			os.Exit(1)
+		}
+
+		eventsubClient, err := eventsub.New(*twitchClientID, *twitchClientSecret, *eventSubWebhookURL, *eventSubWebhookSecret)
+		if err != nil {
+			logger.Error("Error creating the eventsub client", "err", err)
+			os.Exit(1)
+		}
+
+		// expose the eventsub endpoint
+		http.HandleFunc("/eventsub", eventsubClient.Handler)
 	}
 
 	exporter, err := collector.NewExporter(logger, client, *twitchChannel)
