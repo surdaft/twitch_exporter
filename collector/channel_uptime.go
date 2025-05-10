@@ -65,31 +65,28 @@ func (c channelUpTimeCollector) Update(ch chan<- prometheus.Metric) error {
 	// the uptime for this channel since they went online
 	// note: potential issue if the collector is restarted, since we may increment the uptime
 	// multiple times
+	wg := sync.WaitGroup{}
 	for _, s := range streamsResp.Data.Streams {
-		if _, ok := firstPush[s.UserName]; !ok {
-			firstPushMutex.Lock()
+		wg.Add(1)
 
-			firstPush[s.UserName] = true
-			ch <- prometheus.MustNewConstMetric(
-				c.channelUpTime.desc,
-				prometheus.CounterValue,
-				time.Since(s.StartedAt).Seconds(),
-				s.UserName,
-			)
-
-			firstPushMutex.Unlock()
-		} else {
-			// since we have already done the first push, we just increment the time
-			// since the last scrape
-			ch <- prometheus.MustNewConstMetric(
-				c.channelUpTime.desc,
-				prometheus.CounterValue,
-				time.Since(lastScrape).Seconds(),
-				s.UserName,
-			)
-		}
+		go c.pushUptime(ch, s.UserName, time.Since(s.StartedAt), func() {
+			wg.Done()
+		})
 	}
+
+	wg.Wait()
 
 	lastScrape = time.Now()
 	return nil
+}
+
+func (c channelUpTimeCollector) pushUptime(ch chan<- prometheus.Metric, username string, uptime time.Duration, done func()) {
+	ch <- prometheus.MustNewConstMetric(
+		c.channelUpTime.desc,
+		prometheus.CounterValue,
+		uptime.Seconds(),
+		username,
+	)
+
+	done()
 }
