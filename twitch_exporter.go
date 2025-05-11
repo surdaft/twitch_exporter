@@ -12,6 +12,7 @@ import (
 
 	kingpin "github.com/alecthomas/kingpin/v2"
 	"github.com/damoun/twitch_exporter/collector"
+	"github.com/damoun/twitch_exporter/internal/eventsub"
 	"github.com/nicklaw5/helix/v2"
 	"github.com/prometheus/client_golang/prometheus"
 	versioncollector "github.com/prometheus/client_golang/prometheus/collectors/version"
@@ -39,6 +40,12 @@ var (
 		"Access Token for the Twitch Helix API.").String()
 	twitchRefreshToken = kingpin.Flag("twitch.refresh-token",
 		"Refresh Token for the Twitch Helix API.").String()
+	eventSubEnabled = kingpin.Flag("eventsub.enabled",
+		"Enable the Twitch Eventsub API.").Default("false").Bool()
+	eventSubWebhookURL = kingpin.Flag("eventsub.webhook-url",
+		"Webhook URL for the Twitch Eventsub API.").Default("").String()
+	eventSubWebhookSecret = kingpin.Flag("eventsub.webhook-secret",
+		"Webhook Secret for the Twitch Eventsub API.").Default("").String()
 
 	// collector configs
 	// the twitch channel is a global config for all collectors, and is
@@ -71,7 +78,7 @@ func main() {
 	promslogConfig := &promslog.Config{}
 	flag.AddFlags(kingpin.CommandLine, promslogConfig)
 
-	var webConfig = webflag.AddFlags(kingpin.CommandLine, ":9184")
+	var webConfig = webflag.AddFlags(kingpin.CommandLine, "0.0.0.0:9184")
 	kingpin.Version(version.Print("twitch_exporter"))
 	kingpin.HelpFlag.Short('h')
 	kingpin.Parse()
@@ -83,24 +90,77 @@ func main() {
 	var client *helix.Client
 	var err error
 
-	if *twitchClientSecret != "" {
-		client, err = newClientWithSecret(logger)
-		if err != nil {
-			logger.Error("Error creating the client", "err", err)
-			os.Exit(1)
-		}
-	} else if *twitchAccessToken != "" && *twitchRefreshToken != "" {
-		client, err = newClientWithUserAccessToken(logger)
-		if err != nil {
-			logger.Error("Error creating the client", "err", err)
-			os.Exit(1)
-		}
+	clientType := ""
+
+	if *twitchAccessToken != "" && *twitchRefreshToken != "" {
+		clientType = "user"
+	} else if *twitchClientSecret != "" {
+		clientType = "app"
 	} else {
 		logger.Error("Error creating the client", "err", "no client secret or access token provided")
 		os.Exit(1)
 	}
 
-	exporter, err := collector.NewExporter(logger, client, *twitchChannel)
+	logger.Info("client type determined", "clientType", clientType)
+
+	switch clientType {
+	case "app":
+		client, err = newClientWithSecret(logger)
+		if err != nil {
+			logger.Error("Error creating the client", "err", err)
+			os.Exit(1)
+		}
+	case "user":
+		client, err = newClientWithUserAccessToken(logger)
+		if err != nil {
+			logger.Error("Error creating the client", "err", err)
+			os.Exit(1)
+		}
+	}
+
+	var eventsubClient *eventsub.Client
+
+	if *eventSubEnabled {
+		logger.Info("eventsub endpoint enabled", "endpoint", "/eventsub")
+
+		var appClient *helix.Client
+
+		// eventsub requires an app client to create webhooks, but we may have created a user client
+		// beforehand for subscription metrics, so just check and create the app client if needed
+		if clientType == "user" {
+			appClient, err = newClientWithSecret(logger)
+			if err != nil {
+				logger.Error("Error creating the client", "err", err)
+				os.Exit(1)
+			}
+		} else {
+			appClient = client
+		}
+
+		if *eventSubWebhookURL == "" || *eventSubWebhookSecret == "" {
+			logger.Error("Error creating the eventsub client", "err", "webhook URL and secret are required")
+			os.Exit(1)
+		}
+
+		eventsubClient, err = eventsub.New(
+			*twitchClientID,
+			*twitchClientSecret,
+			*eventSubWebhookURL,
+			*eventSubWebhookSecret,
+			logger,
+			appClient,
+		)
+
+		if err != nil {
+			logger.Error("Error creating the eventsub client", "err", err)
+			os.Exit(1)
+		}
+
+		// expose the eventsub endpoint
+		http.HandleFunc("/eventsub", eventsubClient.Handler())
+	}
+
+	exporter, err := collector.NewExporter(logger, client, eventsubClient, *twitchChannel)
 	if err != nil {
 		logger.Error("Error creating the exporter", "err", err)
 		os.Exit(1)
