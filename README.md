@@ -22,6 +22,8 @@ make
 | twitch_channel_views_total | Is the total number of views on a twitch channel. | username |
 | twitch_channel_followers_total | Is the total number of follower on a twitch channel. | username |
 | twitch_channel_subscribers_total | Is the total number of subscriber on a twitch channel. | username, tier, gifted |
+| twitch_channel_chat_messages_total | Is the total number of chat messages from a user within
+a channel. | username, chatter_username |
 
 ### Flags
 
@@ -54,8 +56,40 @@ make
 
 ## Event-sub
 
-Event-sub metrics are disabled by default due to requiring a public endpoint to be exposed, which Twitch is then able to send
-a webhook to. Due to the likeliness that you do not want to expose the service publicly, it is disabled.
+Event-sub metrics are disabled by default due to requiring a public endpoint to be exposed and more permissions and setup. 
+Due to the likeliness that you do not want to expose the service publicly and go through too much effort, it is disabled by
+default.
+
+If you wish to use eventsub based metrics then you should deploy an instance of the exporter just for the user that needs
+the eventsub metrics, such as your own channel, and just collect the privileged metrics using that exporter.
+
+> Todo: Instead of disabling all other collectors, functionality to set collectors should be implemented
+
+### Setting up eventsub metrics
+
+You can read more about the process [here](https://dev.twitch.tv/docs/chat/authenticating/)
+
+1. Install the twitch-cli
+1. Ensure your twitch app has localhost:3000 added as a redirect uri
+1. `twitch token -u -s 'channel:bot user:chat:read user:bot channel:read:subscriptions'` (At this point, since you are getting a user token, you may as well get the subscriptions metric too)
+1. Start the collector with `client-id`, `client-secret`, `access-token`, and `refresh-token` defined
+
+```
+go run twitch_exporter.go \
+  --twitch.client-id xxx \
+  --twitch.client-secret xxx \
+  --twitch.access-token xxx \
+  --twitch.refresh-token xxx \
+  --twitch.channel surdaft \
+  --eventsub.enabled \
+  --eventsub.webhook-url 'https://xxx/eventsub' \
+  --eventsub.webhook-secret xxxx \
+  --collector.channel_chat_messages_total \
+  --collector.channel_subscribers_total \
+  --no-collector.channel_followers_total \
+  --no-collector.channel_up \
+  --no-collector.channel_viewers_total
+```
 
 ## Useful Queries
 

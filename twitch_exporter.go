@@ -81,27 +81,51 @@ func main() {
 	var client *helix.Client
 	var err error
 
-	if *twitchClientSecret != "" {
-		client, err = newClientWithSecret(logger)
-		if err != nil {
-			logger.Error("Error creating the client", "err", err)
-			os.Exit(1)
-		}
-	} else if *twitchAccessToken != "" && *twitchRefreshToken != "" {
-		client, err = newClientWithUserAccessToken(logger)
-		if err != nil {
-			logger.Error("Error creating the client", "err", err)
-			os.Exit(1)
-		}
+	clientType := ""
+
+	if *twitchAccessToken != "" && *twitchRefreshToken != "" {
+		clientType = "user"
+	} else if *twitchClientSecret != "" {
+		clientType = "app"
 	} else {
 		logger.Error("Error creating the client", "err", "no client secret or access token provided")
 		os.Exit(1)
 	}
 
-	if *eventSubEnabled {
-		if *twitchClientSecret == "" {
-			logger.Error("Error creating the eventsub client", "err", "client secret is required, app access tokens are generated for eventsub")
+	logger.Info("client type determined", "clientType", clientType)
+
+	switch clientType {
+	case "app":
+		client, err = newClientWithSecret(logger)
+		if err != nil {
+			logger.Error("Error creating the client", "err", err)
 			os.Exit(1)
+		}
+	case "user":
+		client, err = newClientWithUserAccessToken(logger)
+		if err != nil {
+			logger.Error("Error creating the client", "err", err)
+			os.Exit(1)
+		}
+	}
+
+	var eventsubClient *eventsub.Client
+
+	if *eventSubEnabled {
+		logger.Info("eventsub endpoint enabled", "endpoint", "/eventsub")
+
+		var appClient *helix.Client
+
+		// eventsub requires an app client to create webhooks, but we may have created a user client
+		// beforehand for subscription metrics, so just check and create the app client if needed
+		if clientType == "user" {
+			appClient, err = newClientWithSecret(logger)
+			if err != nil {
+				logger.Error("Error creating the client", "err", err)
+				os.Exit(1)
+			}
+		} else {
+			appClient = client
 		}
 
 		if *eventSubWebhookURL == "" || *eventSubWebhookSecret == "" {
@@ -109,17 +133,25 @@ func main() {
 			os.Exit(1)
 		}
 
-		eventsubClient, err := eventsub.New(*twitchClientID, *twitchClientSecret, *eventSubWebhookURL, *eventSubWebhookSecret)
+		eventsubClient, err = eventsub.New(
+			*twitchClientID,
+			*twitchClientSecret,
+			*eventSubWebhookURL,
+			*eventSubWebhookSecret,
+			logger,
+			appClient,
+		)
+
 		if err != nil {
 			logger.Error("Error creating the eventsub client", "err", err)
 			os.Exit(1)
 		}
 
 		// expose the eventsub endpoint
-		http.HandleFunc("/eventsub", eventsubClient.Handler)
+		http.HandleFunc("/eventsub", eventsubClient.Handler())
 	}
 
-	exporter, err := collector.NewExporter(logger, client, *twitchChannel)
+	exporter, err := collector.NewExporter(logger, client, eventsubClient, *twitchChannel)
 	if err != nil {
 		logger.Error("Error creating the exporter", "err", err)
 		os.Exit(1)

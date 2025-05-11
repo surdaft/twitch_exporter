@@ -3,6 +3,7 @@ package collector
 import (
 	"log/slog"
 
+	"github.com/damoun/twitch_exporter/internal/eventsub"
 	"github.com/nicklaw5/helix/v2"
 	"github.com/prometheus/client_golang/prometheus"
 )
@@ -19,7 +20,7 @@ func init() {
 	registerCollector("channel_up", defaultEnabled, NewChannelUpCollector)
 }
 
-func NewChannelUpCollector(logger *slog.Logger, client *helix.Client, channelNames ChannelNames) (Collector, error) {
+func NewChannelUpCollector(logger *slog.Logger, client *helix.Client, eventsubClient *eventsub.Client, channelNames ChannelNames) (Collector, error) {
 	c := channelUpCollector{
 		logger:       logger,
 		client:       client,

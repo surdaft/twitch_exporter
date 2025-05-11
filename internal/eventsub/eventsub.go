@@ -3,36 +3,44 @@ package eventsub
 import (
 	"encoding/json"
 	"errors"
+	"log/slog"
+	"net/http"
 
 	"github.com/LinneB/twitchwh"
+	"github.com/nicklaw5/helix/v2"
 )
 
-// DefaultClient is the default client for the Eventsub API.
-// We create this just before initialising the exporter, it is global to avoid
-// too high complexity within the collector package.
-// todo: this is a bit of a hack, we should find a better way to handle this.
-var DefaultClient *twitchwh.Client
-
 type ChannelChatMessageEvent struct {
-	Subscription Subscription `json:"subscription"`
-	Event        Event        `json:"event"`
-}
-
-type Event struct {
-	BroadcasterUserID           string      `json:"broadcaster_user_id"`
-	BroadcasterUserLogin        string      `json:"broadcaster_user_login"`
-	BroadcasterUserName         string      `json:"broadcaster_user_name"`
-	ChatterUserID               string      `json:"chatter_user_id"`
-	ChatterUserLogin            string      `json:"chatter_user_login"`
-	ChatterUserName             string      `json:"chatter_user_name"`
-	MessageID                   string      `json:"message_id"`
-	Message                     Message     `json:"message"`
-	Color                       string      `json:"color"`
-	Badges                      []Badge     `json:"badges"`
-	MessageType                 string      `json:"message_type"`
-	Cheer                       interface{} `json:"cheer"`
-	Reply                       interface{} `json:"reply"`
-	ChannelPointsCustomRewardID interface{} `json:"channel_points_custom_reward_id"`
+	BroadcasterUserID       string `json:"broadcaster_user_id"`
+	BroadcasterUserLogin    string `json:"broadcaster_user_login"`
+	BroadcasterUserName     string `json:"broadcaster_user_name"`
+	SourceBroadcasterUserID string `json:"source_broadcaster_user_id"`
+	SourceBroadcasterLogin  string `json:"source_broadcaster_user_login"`
+	SourceBroadcasterName   string `json:"source_broadcaster_user_name"`
+	ChatterUserID           string `json:"chatter_user_id"`
+	ChatterUserLogin        string `json:"chatter_user_login"`
+	ChatterUserName         string `json:"chatter_user_name"`
+	MessageID               string `json:"message_id"`
+	SourceMessageID         string `json:"source_message_id"`
+	IsSourceOnly            bool   `json:"is_source_only"`
+	Message                 struct {
+		Text      string `json:"text"`
+		Fragments []struct {
+			Type      string      `json:"type"`
+			Text      string      `json:"text"`
+			Cheermote interface{} `json:"cheermote"`
+			Emote     interface{} `json:"emote"`
+			Mention   interface{} `json:"mention"`
+		} `json:"fragments"`
+	} `json:"message"`
+	Color                       string  `json:"color"`
+	Badges                      []Badge `json:"badges"`
+	SourceBadges                []Badge `json:"source_badges"`
+	MessageType                 string  `json:"message_type"`
+	Cheer                       string  `json:"cheer"`
+	Reply                       string  `json:"reply"`
+	ChannelPointsCustomRewardID string  `json:"channel_points_custom_reward_id"`
+	ChannelPointsAnimationID    string  `json:"channel_points_animation_id"`
 }
 
 type Badge struct {
@@ -41,64 +49,113 @@ type Badge struct {
 	Info  string `json:"info"`
 }
 
-type Message struct {
-	Text      string     `json:"text"`
-	Fragments []Fragment `json:"fragments"`
+var ErrEventsubClientNotSet = errors.New("eventsub client not set")
+
+type Client struct {
+	webhookURL    string
+	webhookSecret string
+
+	appClient *helix.Client
+	logger    *slog.Logger
+	cl        *twitchwh.Client
 }
 
-type Fragment struct {
-	Type      string      `json:"type"`
-	Text      string      `json:"text"`
-	Cheermote interface{} `json:"cheermote"`
-	Emote     interface{} `json:"emote"`
-	Mention   interface{} `json:"mention"`
-}
+func New(
+	clientID, clientSecret, webhookURL, webhookSecret string,
+	logger *slog.Logger,
+	appClient *helix.Client,
+) (*Client, error) {
+	eventsubCl := &Client{
+		appClient:     appClient,
+		logger:        logger,
+		webhookURL:    webhookURL,
+		webhookSecret: webhookSecret,
+	}
 
-type Subscription struct {
-	ID        string    `json:"id"`
-	Status    string    `json:"status"`
-	Type      string    `json:"type"`
-	Version   string    `json:"version"`
-	Condition Condition `json:"condition"`
-	Transport Transport `json:"transport"`
-	CreatedAt string    `json:"created_at"`
-	Cost      int64     `json:"cost"`
-}
-
-type Condition struct {
-	BroadcasterUserID string `json:"broadcaster_user_id"`
-	UserID            string `json:"user_id"`
-}
-
-type Transport struct {
-	Method   string `json:"method"`
-	Callback string `json:"callback"`
-}
-
-var ErrEventsubDefaultClientNotSet = errors.New("eventsub default client not set")
-
-func New(clientID, clientSecret, webhookURL, webhookSecret string) (*twitchwh.Client, error) {
 	cl, err := twitchwh.New(twitchwh.ClientConfig{
 		ClientID:      clientID,
 		ClientSecret:  clientSecret,
 		WebhookURL:    webhookURL,
 		WebhookSecret: webhookSecret,
+		Debug:         true,
 	})
 
 	if err != nil {
 		return nil, err
 	}
 
-	DefaultClient = cl
-	return cl, nil
+	eventsubCl.cl = cl
+
+	return eventsubCl, nil
 }
 
-func On(event string, callback func(eventRaw json.RawMessage)) error {
+func (c *Client) Handler() http.HandlerFunc {
+	return c.cl.Handler
+}
+
+func (c *Client) On(event string, callback func(eventRaw json.RawMessage)) error {
 	// juuust in case
-	if DefaultClient == nil {
-		return ErrEventsubDefaultClientNotSet
+	if c.cl == nil {
+		c.logger.Warn("eventsub client not set")
+		return ErrEventsubClientNotSet
 	}
 
-	DefaultClient.On(event, callback)
+	c.cl.On(event, callback)
+	return nil
+}
+
+func (c *Client) Subscribe(eventType string, broadcasterID string) error {
+	if c.cl == nil {
+		c.logger.Warn("eventsub client not set")
+		return ErrEventsubClientNotSet
+	}
+
+	c.logger.Info("subscribing to event", "event", eventType, "broadcaster_id", broadcasterID)
+
+	// cannot filter by both the user id and the event type, so the better option is to get all the user
+	// subscriptions and see if the event type is found already
+	subscriptions, err := c.appClient.GetEventSubSubscriptions(&helix.EventSubSubscriptionsParams{
+		UserID: broadcasterID,
+	})
+
+	if err != nil {
+		return err
+	}
+
+	for _, v := range subscriptions.Data.EventSubSubscriptions {
+		if v.Type == eventType {
+			c.logger.Info("subscription already exists", "event", eventType, "broadcaster_id", broadcasterID)
+			return nil
+		}
+	}
+
+	res, err := c.appClient.CreateEventSubSubscription(&helix.EventSubSubscription{
+		Type:    eventType,
+		Version: "1",
+		// the bot user and the broadcaster user are the same, assuming that the access token is for the broadcaster
+		Condition: helix.EventSubCondition{
+			UserID:            broadcasterID,
+			BroadcasterUserID: broadcasterID,
+		},
+		Transport: helix.EventSubTransport{
+			Method:   "webhook",
+			Callback: c.webhookURL,
+			Secret:   c.webhookSecret,
+		},
+	})
+
+	if err != nil {
+		return err
+	}
+
+	if res.StatusCode != http.StatusOK {
+		c.logger.Info("failed to create subscription", "res", res)
+		return errors.Join(errors.New("failed to create subscription"), errors.New(res.ErrorMessage))
+	}
+
+	c.logger.Info("subscription created", "error", res.Error, "status_code", res.StatusCode, "data", res.Data)
+
+	// c.logger.Info("subscription created", "event", eventType, "broadcaster_id", broadcasterID, "subscription_id", res.Data.EventSubSubscriptions[0].ID)
+
 	return nil
 }
