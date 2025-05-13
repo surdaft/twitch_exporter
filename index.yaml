@@ -2,6 +2,16 @@ apiVersion: v1
 entries:
   twitch-exporter:
   - apiVersion: v2
+    appVersion: 0.2.2
+    created: "2025-05-13T09:17:24.440148193Z"
+    description: A Helm chart for twitch_exporter
+    digest: 0f61d547b0fb689bb33e69098460fe2ed6051c49fee2b19898e55597199389bf
+    name: twitch-exporter
+    type: application
+    urls:
+    - https://github.com/surdaft/twitch_exporter/releases/download/twitch-exporter-0.1.1/twitch-exporter-0.1.1.tgz
+    version: 0.1.1
+  - apiVersion: v2
     appVersion: 1.0.5
     created: "2025-01-28T23:54:51.659049675Z"
     description: A Helm chart for twitch_exporter
@@ -11,4 +21,4 @@ entries:
     urls:
     - https://github.com/surdaft/twitch_exporter/releases/download/twitch-exporter-0.1.0/twitch-exporter-0.1.0.tgz
     version: 0.1.0
-generated: "2025-01-28T23:54:51.659055486Z"
+generated: "2025-05-13T09:17:24.440155226Z"
