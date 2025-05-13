@@ -47,7 +47,7 @@ spec:
             {{ end -}}
 
             {{- range .Values.twitch.channels }}
-            "--twitch.channel={{ .name }}",
+            "--twitch.channel={{ . }}",
             {{ end -}}
 
             {{- if .Values.twitch.eventsub.enabled }}
