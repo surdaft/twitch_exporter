@@ -22,6 +22,16 @@ twitch:
     - dam0un
     - surdaft
 
+  # eventsub is disabled due to the need to expose the service
+  eventsub:
+    enabled: false
+    webhookURL: ""
+    webhookSecret: ""
+
+  # additionalParameters is a list of additional parameters to pass to the
+  # exporter, such as --collector.channel_chat_messages_total
+  additionalParameters: []
+
 image:
   repository: damoun/twitch-exporter
   pullPolicy: Always
@@ -35,8 +45,10 @@ service:
   type: ClusterIP
   port: 9184
 
+# ingress would be required if using eventsub
 ingress:
   enabled: false
+  annotations: {}
 
 resources: {}
 

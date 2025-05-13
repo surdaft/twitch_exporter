@@ -37,13 +37,28 @@ spec:
             "--twitch.refresh-token=$(TWITCH_REFRESH_TOKEN)",
             {{ end -}}
 
+            {{- if .Values.twitch.clientId }}
+            "--twitch.client-id=$(TWITCH_CLIENT_ID)",
+            {{ end -}}
+
             {{- if .Values.twitch.clientSecret }}
             # client secret is provided as a secret
             "--twitch.client-secret=$(TWITCH_CLIENT_SECRET)",
             {{ end -}}
 
-            # config is provided as a config map
-            "--config=/var/secrets/config.yml"
+            {{- range .Values.twitch.channels }}
+            "--twitch.channel={{ .name }}",
+            {{ end -}}
+
+            {{- if .Values.twitch.eventsub.enabled }}
+            "--eventsub.enabled",
+            "--eventsub.webhook-url=$(EVENTSUB_WEBHOOK_URL)",
+            "--eventsub.webhook-secret=$(EVENTSUB_WEBHOOK_SECRET)",
+            {{ end -}}
+
+            {{- range .Values.twitch.additionalParameters }}
+            "{{ . }}",
+            {{ end -}}
           ]
           envFrom:
             - secretRef:
