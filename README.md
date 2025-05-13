@@ -22,8 +22,7 @@ make
 | twitch_channel_views_total | Is the total number of views on a twitch channel. | username |
 | twitch_channel_followers_total | Is the total number of follower on a twitch channel. | username |
 | twitch_channel_subscribers_total | Is the total number of subscriber on a twitch channel. | username, tier, gifted |
-| twitch_channel_chat_messages_total | Is the total number of chat messages from a user within
-a channel. | username, chatter_username |
+| twitch_channel_chat_messages_total | Is the total number of chat messages from a user within a channel. | username, chatter_username |
 
 ### Flags
 
@@ -56,7 +55,7 @@ a channel. | username, chatter_username |
 
 ## Event-sub
 
-Event-sub metrics are disabled by default due to requiring a public endpoint to be exposed and more permissions and setup. 
+Event-sub metrics are disabled by default due to requiring a public endpoint to be exposed and more permissions and setup.
 Due to the likeliness that you do not want to expose the service publicly and go through too much effort, it is disabled by
 default.
 
