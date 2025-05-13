@@ -63,9 +63,6 @@ spec:
           envFrom:
             - secretRef:
                 name: twitch-exporter-env
-          volumeMounts:
-            - name: twitch-exporter-config
-              mountPath: /var/secrets
           ports:
             - name: http
               containerPort: {{ .Values.service.port }}
