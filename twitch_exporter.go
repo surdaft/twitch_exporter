@@ -175,6 +175,7 @@ func main() {
 	}))
 
 	http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+		logger.Info("request received", "path", r.URL.Path, "method", r.Method)
 		_, err := w.Write([]byte(`<html>
              <head><title>Twitch Exporter</title></head>
              <body>
