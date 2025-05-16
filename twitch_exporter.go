@@ -90,15 +90,15 @@ func main() {
 	var client *helix.Client
 	var err error
 
-	clientType := ""
+	clientType := "app"
+
+	if *twitchClientID == "" || *twitchClientSecret == "" {
+		logger.Error("Error creating the client", "err", "client ID and secret are required")
+		os.Exit(1)
+	}
 
 	if *twitchAccessToken != "" && *twitchRefreshToken != "" {
 		clientType = "user"
-	} else if *twitchClientSecret != "" {
-		clientType = "app"
-	} else {
-		logger.Error("Error creating the client", "err", "no client secret or access token provided")
-		os.Exit(1)
 	}
 
 	logger.Info("client type determined", "clientType", clientType)
@@ -204,11 +204,26 @@ func refreshAppAccessToken(logger *slog.Logger, client *helix.Client) {
 	}
 
 	if appAccessToken.ErrorStatus != 0 {
-		logger.Error("Error getting app access token", "err", appAccessToken.Error)
+		logger.Error("Error getting app access token", "err", appAccessToken.ErrorMessage)
 		return
 	}
 
 	client.SetAppAccessToken(appAccessToken.Data.AccessToken)
+}
+
+func refreshUserAccessToken(logger *slog.Logger, client *helix.Client) {
+	userAccessToken, err := client.RefreshUserAccessToken(client.GetRefreshToken())
+	if err != nil {
+		logger.Error("Error getting user access token", "err", err)
+		return
+	}
+
+	if userAccessToken.ErrorStatus != 0 {
+		logger.Error("Error getting user access token", "err", userAccessToken.ErrorMessage)
+		return
+	}
+
+	client.SetUserAccessToken(userAccessToken.Data.AccessToken)
 }
 
 // newClientWithSecret creates a new Twitch client with the use of an app access
@@ -249,6 +264,7 @@ func newClientWithUserAccessToken(logger *slog.Logger) (*helix.Client, error) {
 	// client.
 	client, err := helix.NewClient(&helix.Options{
 		ClientID:        *twitchClientID,
+		ClientSecret:    *twitchClientSecret,
 		UserAccessToken: *twitchAccessToken,
 		RefreshToken:    *twitchRefreshToken,
 	})
@@ -257,6 +273,23 @@ func newClientWithUserAccessToken(logger *slog.Logger) (*helix.Client, error) {
 		logger.Error("Error creating the client", "err", err)
 		return nil, err
 	}
+
+	// it may be redundant to refresh the access token here, but it's done
+	// anyway to ensure the access token is always valid, in case the parameters
+	// are outdated
+	refreshUserAccessToken(logger, client)
+
+	// now set a ticker for ensuring the access token is refreshed, app access
+	// tokens do not return a refresh token, so we need to refresh them every
+	// 24 hours.
+	ticker := time.NewTicker(24 * time.Hour)
+	defer ticker.Stop()
+
+	go func(logger *slog.Logger, client *helix.Client) {
+		for range ticker.C {
+			refreshUserAccessToken(logger, client)
+		}
+	}(logger, client)
 
 	return client, nil
 }
