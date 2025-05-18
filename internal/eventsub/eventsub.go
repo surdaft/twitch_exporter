@@ -90,7 +90,10 @@ func New(
 }
 
 func (c *Client) Handler() http.HandlerFunc {
-	return c.cl.Handler
+	return func(w http.ResponseWriter, r *http.Request) {
+		c.logger.Debug("received event", "body", r.Body, "headers", r.Header)
+		c.cl.Handler(w, r)
+	}
 }
 
 func (c *Client) On(event string, callback func(eventRaw json.RawMessage)) error {
@@ -116,6 +119,8 @@ func (c *Client) Subscribe(eventType string, broadcasterID string) error {
 	// subscriptions and see if the event type is found already
 	subscriptions, err := c.appClient.GetEventSubSubscriptions(&helix.EventSubSubscriptionsParams{
 		UserID: broadcasterID,
+		// this will handle if a subscription already exists but failed to verify
+		Status: "enabled",
 	})
 
 	if err != nil {
