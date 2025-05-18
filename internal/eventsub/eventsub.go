@@ -93,6 +93,7 @@ func (c *Client) Handler() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		c.logger.Debug("received event", "body", r.Body, "headers", r.Header)
 		c.cl.Handler(w, r)
+		c.logger.Debug("event handled", "headers", w.Header())
 	}
 }
 
@@ -119,8 +120,6 @@ func (c *Client) Subscribe(eventType string, broadcasterID string) error {
 	// subscriptions and see if the event type is found already
 	subscriptions, err := c.appClient.GetEventSubSubscriptions(&helix.EventSubSubscriptionsParams{
 		UserID: broadcasterID,
-		// this will handle if a subscription already exists but failed to verify
-		Status: "enabled",
 	})
 
 	if err != nil {
@@ -128,7 +127,7 @@ func (c *Client) Subscribe(eventType string, broadcasterID string) error {
 	}
 
 	for _, v := range subscriptions.Data.EventSubSubscriptions {
-		if v.Type == eventType {
+		if v.Type == eventType && (v.Status == "enabled" || v.Status == "webhook_callback_verification_pending") {
 			c.logger.Info("subscription already exists", "event", eventType, "broadcaster_id", broadcasterID)
 			return nil
 		}
@@ -153,7 +152,7 @@ func (c *Client) Subscribe(eventType string, broadcasterID string) error {
 		return err
 	}
 
-	if res.StatusCode != http.StatusOK {
+	if res.StatusCode != http.StatusAccepted {
 		c.logger.Info("failed to create subscription", "res", res)
 		return errors.Join(errors.New("failed to create subscription"), errors.New(res.ErrorMessage))
 	}
