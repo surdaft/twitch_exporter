@@ -95,11 +95,11 @@ func NewChannelChatMessagesCollector(logger *slog.Logger, client *helix.Client, 
 			return
 		}
 
-		chatMessages.Add(event.BroadcasterUserName, event.ChatterUserName)
+		chatMessages.Add(event.BroadcasterUserLogin, event.ChatterUserLogin)
 
 		logger.Info(
 			"channel chat message",
-			"count", chatMessages.Get(event.BroadcasterUserName, event.ChatterUserName),
+			"count", chatMessages.Get(event.BroadcasterUserLogin, event.ChatterUserLogin),
 		)
 	})
 
