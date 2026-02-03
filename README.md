@@ -23,6 +23,11 @@ make
 | twitch_channel_followers_total | Is the total number of follower on a twitch channel. | username |
 | twitch_channel_subscribers_total | Is the total number of subscriber on a twitch channel. | username, tier, gifted |
 | twitch_channel_chat_messages_total | Is the total number of chat messages from a user within a channel. | username, chatter_username |
+| twitch_channel_chatters_total | Is the total number of chatters on a twitch channel. * | username |
+
+```
+* This metric only works when the authenticated token is a moderator in the channel requested
+```
 
 ### Flags
 
@@ -47,6 +52,7 @@ make
 * __`--[no-]collector.channel_up`:__ Enable the channel_up collector (default: enabled).
 * __`--[no-]collector.channel_viewers_total`:__ Enable the channel_viewers_total collector (default: enabled).
 * __`--[no-]collector.channel_chat_messages_total`:__ Enable the channel_chat_messages_total (default: disabled**).
+* __`--[no-]collector.channel_chatters_total`:__ Enable the channel_chatters_total (default: disabled**).
 
 ```
 * Disabled due to the requirement of a user access token, which must be acquired outside of the collector
